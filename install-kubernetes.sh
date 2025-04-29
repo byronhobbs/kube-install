@@ -177,7 +177,7 @@ plugin_dir = ""
 required_plugins = []
 root = "/var/lib/containerd"
 state = "/run/containerd"
-version = 3
+version = 2
 
 [plugins]
 
