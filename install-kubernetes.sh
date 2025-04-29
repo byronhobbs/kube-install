@@ -249,11 +249,11 @@ function kubeadm_init(){
     fi
     
     cat > kubeadm-config.yaml <<-EOF
-apiVersion: kubeadm.k8s.io/v1beta3
+apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration
 kubernetesVersion: v${KUBE_VERSION}
 networking:
-  podSubnet: 192.168.8.0/24
+  podSubnet: 192.168.9.0/24
 controlPlaneEndpoint: "${MAIN_IP}:6443"
 EOF
     # use config file for kubeadm
