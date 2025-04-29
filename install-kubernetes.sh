@@ -414,7 +414,7 @@ function run_main(){
     kubeadm_init
     configure_kubeconfig
     install_cni
-    wait_for_nodes
+    # wait_for_nodes
     # now  test what was installed
     test_kubernetes_version
     install_metrics_server
