@@ -221,8 +221,6 @@ function start_services(){
 function install_cni(){
   # need to deploy two manifests for calico to work
   echo "Installing Calico CNI"
-  for manifest in tigera-operator custom-resources; do
-  echo "==> Installing Calico "
   {
     kubectl create -f ${CALICO_URL}/tigera-operator.yaml
     kubectl create -f ${CALICO_URL}/custom-resources.yaml
