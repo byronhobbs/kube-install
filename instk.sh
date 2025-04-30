@@ -79,131 +79,26 @@ function remove_packages(){
   } 3>&2 >> $LOG_FILE 2>&1 
 }
 
-### install required packages
-function install_packages(){
-  echo "Installing required packages"
+function install_docker(){
+  echo "Installing Docker"
   {
-    apt-get update
-    apt-get install -y \
-      apt-transport-https \
-      ca-certificates \
-      curl \
-      gnupg \
-      lsb-release \
-      software-properties-common \
-      wget \
-      jq
-  } 3>&2 >> $LOG_FILE 2>&1
-}
+    sudo apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/docker.gpg
+    sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    sudo apt update
+    sudo apt install -y containerd.io
+    } 3>&2 >> $LOG_FILE 2>&1
+} 
 
 ### install kubernetes packages
 function install_kubernetes_packages(){
   echo "Installing Kubernetes packages"
-  # Remove the old repository file if it exists
-  rm -f /etc/apt/sources.list.d/kubernetes.list
-  # Add the new repository
-  cat <<EOF > /etc/apt/sources.list.d/kubernetes.list
-deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /
-EOF
   {
-    # Download the new GPG key
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    # Update package list
-    apt-get update
-    # Install Kubernetes packages with --allow-downgrades flag
-    apt-get install -y \
-      kubelet=${KUBE_VERSION}-* \
-      kubeadm=${KUBE_VERSION}-* \
-      kubectl=${KUBE_VERSION}-*
-    # Hold these packages at the installed version
-    apt-mark hold kubelet kubeadm kubectl
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+    sudo apt update
+    sudo apt install -y kubeadm=${KUBE_VERSION}-1.1 kubelet=${KUBE_VERSION}-1.1 kubectl=${KUBE_VERSION}-1.1
   } 3>&2 >> $LOG_FILE 2>&1
-}
-
-### set required sysctl params, these persist across reboots
-function configure_system(){
-  echo "Configuring system"
-  cat <<EOF > /etc/modules-load.d/containerd.conf
-overlay
-br_netfilter
-EOF
-  cat <<EOF > /etc/sysctl.d/99-kubernetes-cri.conf
-net.bridge.bridge-nf-call-iptables  = 1
-net.ipv4.ip_forward                 = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-EOF
-  {
-    sudo modprobe overlay
-    sudo modprobe br_netfilter
-    sudo sysctl --system
-  } 3>&2 >> $LOG_FILE 2>&1
-}
-
-### crictl uses containerd as default
-function configure_crictl(){
-echo "Configuring crictl"
-cat <<EOF > /etc/crictl.yaml
-runtime-endpoint: unix:///run/containerd/containerd.sock
-EOF
-}
-
-### kubelet should use containerd
-function configure_kubelet(){
-echo "Configuring kubelet"
-cat <<EOF > /etc/default/kubelet
-KUBELET_EXTRA_ARGS="--container-runtime-endpoint unix:///run/containerd/containerd.sock"
-EOF
-}
-
-### install containerd
-function install_containerd() {
-  echo "Installing containerd"
-  {
-    apt-get update
-    apt-get install -y containerd
-  } 3>&2 >> $LOG_FILE 2>&1
-}
-
-### configure containerd
-function configure_containerd(){
-  echo "Configuring containerd"
-  sudo mkdir -p /etc/containerd 3>&2 >> $LOG_FILE 2>&1
-### config.toml
-cat > /etc/containerd/config.toml <<EOF
-disabled_plugins = []
-imports = []
-oom_score = 0
-plugin_dir = ""
-required_plugins = []
-root = "/var/lib/containerd"
-state = "/run/containerd"
-version = 2
-
-[plugins]
-
-  [plugins."io.containerd.grpc.v1.runtime".containerd.runtimes]
-    [plugins."io.containerd.grpc.v1.runtime".containerd.runtimes.runc]
-      base_runtime_spec = ""
-      container_annotations = []
-      pod_annotations = [] 
-      privileged_without_host_devices = false
-      runtime_engine = ""
-      runtime_root = ""
-      runtime_type = "io.containerd.runc.v2"
-
-      [plugins."io.containerd.grpc.v1.runtime".containerd.runtimes.runc.options]
-        BinaryName = ""
-        CriuImagePath = ""
-        CriuPath = ""
-        CriuWorkPath = ""
-        IoGid = 0
-        IoUid = 0
-        NoNewKeyring = false
-        NoPivotRoot = false
-        Root = ""
-        ShimCgroup = ""
-        SystemdCgroup = true
-EOF
 }
 
 ### start services
@@ -222,9 +117,10 @@ function install_cni(){
   # need to deploy two manifests for calico to work
   echo "Installing Calico CNI"
   {
-    kubectl create -f ${CALICO_URL}/tigera-operator.yaml
-    kubectl create -f ${CALICO_URL}/custom-resources.yaml
-    kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+    #kubectl create -f ${CALICO_URL}/tigera-operator.yaml
+    #kubectl create -f ${CALICO_URL}/custom-resources.yaml
+    kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+    #kubectl taint nodes --all node-role.kubernetes.io/control-plane-
   } 3>&2 >> $LOG_FILE 2>&1
 }
 
@@ -280,13 +176,9 @@ function configure_kubeconfig(){
   echo "Configuring kubeconfig for root and ubuntu users"
   {
     # NOTE(curtis): sometimes ubuntu user won't exist, so we don't care if this fails
-    rm /root/.kube/config || true
-    rm /home/ubuntu/.kube/config || true
-    mkdir -p /root/.kube
-    mkdir -p /home/ubuntu/.kube || true
-    cp -i /etc/kubernetes/admin.conf /root/.kube/config
-    cp -i /etc/kubernetes/admin.conf /home/ubuntu/.kube/config || true
-    chown ubuntu:ubuntu /home/ubuntu/.kube/config || true
+    mkdir -p $HOME/.kube
+    sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+    sudo chown $(id -u):$(id -g) $HOME/.kube/config
   } 3>&2 >> $LOG_FILE 2>&1
 }
 
@@ -400,10 +292,9 @@ function run_main(){
   check_linux_distribution
   disable_swap
   remove_packages
-  install_packages
+  install_docker
   install_kubernetes_packages
   configure_system
-  configure_crictl
   configure_kubelet
   configure_containerd
   install_containerd
@@ -414,7 +305,7 @@ function run_main(){
     echo "Configuring control plane node..."
     kubeadm_init
     configure_kubeconfig
-    # install_cni
+    install_cni
     wait_for_nodes
     # now  test what was installed
     test_kubernetes_version
