@@ -111,7 +111,7 @@ EOF
     # Update package list
     apt-get update
     # Install Kubernetes packages with --allow-downgrades flag
-    apt-get install -y --allow-downgrades \
+    apt-get install -y \
       kubelet=${KUBE_VERSION}-* \
       kubeadm=${KUBE_VERSION}-* \
       kubectl=${KUBE_VERSION}-*
